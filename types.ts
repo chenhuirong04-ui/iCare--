@@ -1,4 +1,3 @@
-
 export interface Source {
   title: string;
   uri: string;
@@ -17,11 +16,32 @@ export interface Supplier {
   email?: string;
   website?: string;
   selected?: boolean;
-  // Credibility Flags
   isOfficialWebsite?: boolean;
   isCorporateEmail?: boolean;
-  // Sourcing Origin
   matchType?: 'keyword' | 'visual';
+}
+
+export interface Marketplace1688Item {
+  id?: string;
+  title: string;
+  shopName?: string;
+  type: 'shop' | 'product' | string;
+  products?: string[];
+  location?: string;
+  url: string;
+  source?: string;
+  sourceType?: '1688' | string;
+  matchType?: 'keyword' | 'visual' | string;
+  selected?: boolean;
+}
+
+export interface AnalyzedIntent {
+  originalQuery?: string;
+  factoryKeyword?: string;
+  keyword1688?: string;
+  maxPrice?: number | null;
+  currency?: string;
+  priorities?: string[];
 }
 
 export enum AppState {
@@ -48,16 +68,16 @@ export interface FileMeta {
 }
 
 export interface PriceEntry {
-  price_type: string; // 例如: "每箱", "MOQ 100", "FOB", "EXW"
+  price_type: string;
   unit_price: number;
   currency: string;
   source: string;
 }
 
 export interface GCIPriceEntry extends PriceEntry {
-  sell_price?: number; 
-  margin?: string;     
-  selected?: boolean;  // 该报价维度是否被选中用于当前报价单
+  sell_price?: number;
+  margin?: string;
+  selected?: boolean;
 }
 
 export interface ExtractionItem {
@@ -96,7 +116,7 @@ export interface GCIQuote {
   payment_terms: string;
   lead_time: string;
   remarks: string;
-  items: GCIItem[]; 
+  items: GCIItem[];
   status: 'draft' | 'final';
   total_amount: number;
   created_at: string;
@@ -105,8 +125,10 @@ export interface GCIQuote {
 export type SourcingMode = 'quick' | 'deep';
 
 export interface HunterResult {
-  suppliers: Supplier[];
-  suggestedKeywords: string[];
+  factories: Supplier[];
+  marketplaces1688: Marketplace1688Item[];
+  analyzedIntent?: AnalyzedIntent;
+  suggestedKeywords?: string[];
 }
 
 export interface SourcingResult {
@@ -122,26 +144,24 @@ export interface RFQProduct {
   quantity: number;
   unit: string;
   confidence?: number;
-  // Extended fields for Chinese Sourcing
-  material?: string;       // 材质/等级
-  packaging?: string;      // 包装形式
-  pcsPerCtn?: string;      // 每箱数量
-  ctnSize?: string;        // 外箱尺寸
-  cbm?: string;            // 体积
-  gw?: string;             // 毛重
-  nw?: string;             // 净重
-  productNotes?: string;   // 产品备注
+  material?: string;
+  packaging?: string;
+  pcsPerCtn?: string;
+  ctnSize?: string;
+  cbm?: string;
+  gw?: string;
+  nw?: string;
+  productNotes?: string;
 }
 
-// RFQ Inquiry Database Record
 export interface RFQInquiry {
-  id: string; // Auto-generated RFQ_No
+  id: string;
   targetMarket: string;
   notes: string;
   items: RFQProduct[];
   status: 'Pending_Sourcing' | 'In_Progress' | 'Completed';
   createdAt: string;
-  attachments?: string[]; // URLs or IDs
+  attachments?: string[];
 }
 
 export interface SourcingRequest {
