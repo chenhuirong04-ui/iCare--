@@ -325,11 +325,26 @@ export const HunterResults: React.FC<HunterResultsProps> = ({
                   </div>
                 </div>
 
-                <div className="flex flex-wrap gap-1.5">
-                  {s.products.map((p, i) => (
-                    <span key={i} className="text-[10px] bg-blue-50/50 text-blue-600 px-2 py-1 rounded border border-blue-100 font-medium">{p}</span>
-                  ))}
-                </div>
+               <div className="flex flex-wrap gap-2">
+  {s.products.map((p, i) => (
+    <div key={i} className="flex items-center gap-1.5">
+      <span className="text-[10px] bg-blue-50/50 text-blue-600 px-2 py-1 rounded border border-blue-100 font-medium">
+        {p}
+      </span>
+      <button
+        onClick={() =>
+          window.open(
+            `https://s.1688.com/selloffer/offer_search.htm?keywords=${encodeURIComponent(p)}`,
+            "_blank"
+          )
+        }
+        className="text-[10px] px-2 py-1 rounded border border-amber-200 bg-amber-50 text-amber-700 font-bold hover:bg-amber-100"
+      >
+        1688搜索
+      </button>
+    </div>
+  ))}
+</div>
 
                 {/* Contacts Grid */}
                 <div className="grid grid-cols-2 gap-3 pt-3 border-t border-slate-50">
