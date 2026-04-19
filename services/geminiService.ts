@@ -233,15 +233,16 @@ ${q}
 
 function build1688Url(keyword: string, maxPrice?: number | null): string {
   const cleaned = clean1688Keyword(keyword);
-  const safeKeyword = cleaned || keyword || "";
+  const safeKeyword = (cleaned || keyword || "")
+    .replace(/[^\u4e00-\u9fa5a-zA-Z0-9]/g, "")
+    .trim();
+
   const pricePart =
     typeof maxPrice === "number" && !Number.isNaN(maxPrice)
       ? `&priceStart=0&priceEnd=${maxPrice}`
       : "";
 
-  return `https://s.1688.com/selloffer/offer_search.htm?keywords=${encodeURIComponent(
-    safeKeyword
-  )}${pricePart}`;
+  return `https://s.1688.com/selloffer/offer_search.htm?keywords=${safeKeyword}${pricePart}`;
 }
 
 async function parseExcelBinary(
