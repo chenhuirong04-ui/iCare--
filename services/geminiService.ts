@@ -245,14 +245,17 @@ ${q}
 }
 
 function build1688Url(keyword: string, maxPrice?: number | null): string {
-  const encodedKeyword = encode1688KeywordGBK(keyword);
+  const cleanKeyword = String(keyword || "").trim();
 
-  const pricePart =
-    typeof maxPrice === "number" && !Number.isNaN(maxPrice)
-      ? `&priceStart=0&priceEnd=${maxPrice}`
-      : "";
+  const params = new URLSearchParams();
+  params.set("keywords", cleanKeyword);
 
-  return `https://s.1688.com/selloffer/offer_search.htm?keywords=${encodedKeyword}${pricePart}`;
+  if (typeof maxPrice === "number" && !Number.isNaN(maxPrice)) {
+    params.set("beginPrice", "0");
+    params.set("endPrice", String(maxPrice));
+  }
+
+  return `https://s.1688.com/selloffer/offer_search.htm?${params.toString()}`;
 }
 
 async function parseExcelBinary(
