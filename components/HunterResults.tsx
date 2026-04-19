@@ -115,14 +115,42 @@ export const HunterResults: React.FC<HunterResultsProps> = ({
     return `https://www.google.com/search?q=${encodeURIComponent(safeKeyword)}`;
   };
 
-  const handleOpen1688Search = () => {
-    const keyword =
+  const isOriginal1688Link = (url?: string) => {
+    if (!url) return false;
+    return (
+      /(^https?:\/\/)?(detail\.1688\.com|shop\.1688\.com|offer\.1688\.com|m\.1688\.com)/i.test(url) ||
+      (/1688\.com/i.test(url) && !/selloffer\/offer_search/i.test(url))
+    );
+  };
+
+  const getPreferred1688Url = (item?: Marketplace1688Item) => {
+    const fallbackKeyword =
       analyzedIntent?.keyword1688 ||
-      (Array.isArray(marketplaces1688?.[0]?.products) ? marketplaces1688[0].products?.[0] : '') ||
+      (Array.isArray(item?.products) ? item?.products?.[0] : '') ||
+      item?.title ||
+      item?.shopName ||
       originalRequest?.query ||
       '';
 
-    const url = build1688SearchUrl(keyword, analyzedIntent?.maxPrice);
+    if (item?.url && isOriginal1688Link(item.url)) {
+      return item.url;
+    }
+
+    return build1688SearchUrl(fallbackKeyword, analyzedIntent?.maxPrice);
+  };
+
+  const handleOpen1688Search = () => {
+    const firstOriginal = marketplaces1688.find((m) => isOriginal1688Link(m.url));
+    const url = firstOriginal
+      ? firstOriginal.url
+      : build1688SearchUrl(
+          analyzedIntent?.keyword1688 ||
+            (Array.isArray(marketplaces1688?.[0]?.products) ? marketplaces1688[0].products?.[0] : '') ||
+            originalRequest?.query ||
+            '',
+          analyzedIntent?.maxPrice
+        );
+
     window.open(url, '_blank', 'noopener,noreferrer');
   };
 
@@ -309,7 +337,7 @@ export const HunterResults: React.FC<HunterResultsProps> = ({
               onClick={handleOpen1688Search}
               className="px-4 py-2 rounded-xl bg-amber-500 text-white text-sm font-bold shadow hover:bg-amber-600 transition-all"
             >
-              🛒 打开1688搜索
+              🛒 打开1688原始链接 / 搜索
             </button>
           </div>
         </div>
@@ -650,7 +678,7 @@ export const HunterResults: React.FC<HunterResultsProps> = ({
       {/* 1688区 */}
       <div className="space-y-3 pt-2">
         <div className="flex items-center justify-between px-1">
-          <h4 className="font-extrabold text-base text-amber-700">🛒 1688 搜索入口</h4>
+          <h4 className="font-extrabold text-base text-amber-700">🛒 1688 原始链接 / 搜索入口</h4>
           <div className="text-[10px] font-bold text-slate-400 uppercase">
             {marketplaces1688.length} Results
           </div>
@@ -658,7 +686,7 @@ export const HunterResults: React.FC<HunterResultsProps> = ({
 
         {marketplaces1688.length === 0 ? (
           <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 text-sm text-slate-400">
-            当前没有独立的 1688 搜索入口
+            当前没有独立的 1688 原始链接或搜索入口
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -670,6 +698,9 @@ export const HunterResults: React.FC<HunterResultsProps> = ({
                 m.title ||
                 m.shopName ||
                 '';
+
+              const preferredUrl = getPreferred1688Url(m);
+              const hasOriginalUrl = isOriginal1688Link(m.url);
 
               return (
                 <div
@@ -723,6 +754,15 @@ export const HunterResults: React.FC<HunterResultsProps> = ({
                             : '未指定'}
                         </div>
                       </div>
+
+                      <div className="bg-slate-50 border border-slate-100 rounded-xl p-3">
+                        <div className="text-[10px] font-black text-slate-400 uppercase mb-1">
+                          当前跳转模式
+                        </div>
+                        <div className="text-sm font-bold text-slate-800">
+                          {hasOriginalUrl ? '优先打开原始1688链接' : '原始链接缺失，退回1688搜索入口'}
+                        </div>
+                      </div>
                     </div>
 
                     <div className="flex flex-wrap gap-2">
@@ -752,20 +792,22 @@ export const HunterResults: React.FC<HunterResultsProps> = ({
                       </button>
 
                       <a
-                        href={m.url}
+                        href={preferredUrl}
                         target="_blank"
                         rel="noreferrer"
                         className="flex items-center justify-center gap-2 p-2 rounded-lg transition-colors border border-amber-100 text-amber-700 hover:bg-amber-50"
                       >
                         <span className="text-sm">🔗</span>
-                        <span className="text-[10px] font-extrabold">打开1688搜索</span>
+                        <span className="text-[10px] font-extrabold">
+                          {hasOriginalUrl ? '打开1688原始链接' : '打开1688搜索'}
+                        </span>
                       </a>
                     </div>
                   </div>
 
                   <div className="border-t border-slate-100 bg-slate-50/50 px-4 py-3">
                     <div className="text-[10px] text-slate-400 font-bold">
-                      已生成 1688 搜索入口，带入推荐关键词与价格区间，可在 1688 页面继续筛选
+                      已优先保留原始 1688 链接；若原始链接不可用，则退回到搜索入口
                     </div>
                   </div>
                 </div>
