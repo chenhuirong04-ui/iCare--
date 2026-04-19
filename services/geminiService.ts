@@ -146,30 +146,30 @@ function normalizeUrl(url?: string): string {
 
 function fallbackAnalyzeSearchIntent(q: string): SearchIntentAnalysis {
   const cleanQuery = clean1688Keyword(q);
+
   const priceMatch =
     q.match(/(?:人民币|RMB|CNY)?\s*(\d+(?:\.\d+)?)\s*元(?:以下|以内|之内)?/i) ||
     q.match(/(?:低于|小于|不高于|不超过)\s*(\d+(?:\.\d+)?)/i);
 
   const maxPrice = priceMatch ? Number(priceMatch[1]) : null;
 
-  const keyword1688 =
+  const baseKeyword =
     cleanQuery
-      .replace(/供应商|厂家|工厂/g, " ")
+      .replace(/1688|阿里巴巴|批发|货源/g, " ")
       .replace(/\s+/g, " ")
       .trim() || q;
 
-  const factoryKeyword = keyword1688.includes("供应商")
-    ? keyword1688
-    : `${keyword1688} 供应商`;
+  // ✅ 全球供应链搜索（核心逻辑）
+  const factoryKeyword = `${baseKeyword} manufacturer supplier distributor wholesaler`;
 
   const priorities: string[] = [];
-  if (/出口经验/i.test(q)) priorities.push("有出口经验优先");
-  if (/工厂|厂家|制造商|OEM/i.test(q)) priorities.push("工厂优先");
+  if (/出口经验/i.test(q)) priorities.push("export experienced preferred");
+  if (/中东|迪拜|UAE|Saudi/i.test(q)) priorities.push("Middle East market preferred");
 
   return {
     originalQuery: q,
     factoryKeyword,
-    keyword1688,
+    keyword1688: "",
     maxPrice,
     currency: "CNY",
     priorities,
