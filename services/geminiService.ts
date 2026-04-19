@@ -470,15 +470,26 @@ ${hasImages ? "【对标图品搜索模式】: 请分析提供的对标产品图
 const keywordPrompt = `
 用户需求：${q}
 
-请你把这个需求转化为适合搜索中国工厂的关键词。
+如果用户输入的是客户背景、项目描述或模糊需求（例如开店、采购计划），请执行以下任务：
 
-返回 JSON：
+【任务1：拆解采购产品】
+- 拆解出5-10个具体可采购的产品（必须是SKU级别，例如“面巾纸”、“垃圾袋”、“湿巾”）
+- 不要返回抽象词（如“日用品”、“百货”）
+
+【任务2：生成搜索关键词】
+- 为每个产品生成：
+  1. 1688搜索关键词（中文）
+  2. Google搜索关键词（英文）
+- 每个产品至少1个关键词
+
+【输出JSON格式如下】：
 
 {
+  "products": [],
   "keywords1688": [],
   "keywordsGoogle": []
 }
-
+`
 要求：
 - keywords1688：中文，适合1688
 - keywordsGoogle：英文，适合Google
@@ -493,8 +504,7 @@ const keywordResp = await ai.models.generateContent({
   },
 });
 
-let keywords = { keywords1688: [], keywordsGoogle: [] };
-
+let keywords = { products: [], keywords1688: [], keywordsGoogle: [] };
 try {
   keywords = JSON.parse(keywordResp.text || "{}");
 } catch {}
