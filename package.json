@@ -15,7 +15,8 @@
     "react-markdown": "^10.1.0",
     "remark-gfm": "^4.0.1",
     "exceljs": "4.4.0",
-    "file-saver": "2.0.5"
+    "file-saver": "2.0.5",
+    "text-encoding-gbk": "^0.7.3"
   },
   "devDependencies": {
     "@types/node": "^22.14.0",
