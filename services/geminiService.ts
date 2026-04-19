@@ -408,7 +408,7 @@ export const generateSourcingReport = async (
   ex: string[] = [],
   m: SourcingMode = "quick",
   signal?: AbortSignal
-): Promise<SourcingResult> => {
+): Promise<any> => {
   if (signal?.aborted) {
     throw new Error("操作已取消");
   }
@@ -416,26 +416,46 @@ export const generateSourcingReport = async (
   const ai = getAI();
   const hasImages = i && i.length > 0;
 
-  const prompt = `寻找供应商: ${q}. 模式: ${m}.
+  const prompt = `
+你是“中国产品供应链搜索分流器”。
 
-【真实结果边界约束】:
-1. 你必须仅返回真实存在的、可验证的制造型企业主体。
-2. 禁止通过重复主体、换来源名、或列出同一公司的不同平台链接来填充数量。
-3. 必须排除以下已知的供应商主体(去重列表): [${ex.join(", ")}]。
-4. 如果在当前搜索条件下没有发现新的唯一工厂主体，请返回空数组。
-5. 优先定位真实的制造型工厂（Factory/Manufacturer），而非贸易商。
-6. 如果来源是1688，请直接返回1688链接，不要伪造官网。
+用户搜索需求：${q}
+搜索模式：${m}
 
-${hasImages ? "【对标图品搜索模式】: 请分析提供的对标产品图片，定位对应的真实源头厂。" : ""}
+你的任务不是只找工厂，而是要把结果拆成两个独立池子返回：
 
-关键分析任务：
-- 判定官网：检查 website 是否为独立官方域名。
-- 判定邮箱：检查 email 是否为企业域名邮箱。
-- 判定匹配类型 (matchType): 'visual' 或 'keyword'。
-- 判定来源类型 (sourceType): 'official' | '1688' | 'google'
-- 如果是1688结果，请填写 platform1688
+1) factories：
+- 真实工厂 / 制造商 / OEM 工厂
+- 优先有独立官网、企业邮箱、制造属性明确
+- 不要把 1688 链接塞进工厂对象里当附属字段
+- 必须排除已知重复主体：${ex.join(", ") || "无"}
 
-返回 JSON 格式，必须包含 suppliers 数组。`;
+2) marketplaces1688：
+- 1688 店铺或 1688 商品结果
+- 它们是独立结果，不属于任何工厂卡片的附属项
+- 如果搜到的是 1688 店铺，type 写 "shop"
+- 如果搜到的是 1688 商品，type 写 "product"
+- 必须直接给出 1688 链接
+- 名称尽量用店铺名或商品标题，不要伪装成工厂官网
+
+核心规则：
+- factories 和 marketplaces1688 必须分开返回
+- 不允许把同一个主体同时塞进两个数组冒充两个结果
+- 如果某个工厂没有官网，不要硬写官网
+- 如果某个结果来自 1688，就只放进 marketplaces1688
+- 如果当前条件下某一类搜不到，可以返回空数组
+- 允许两类结果数量不一样
+- 优先保证真实性，不要为了凑数编造
+
+${hasImages ? "这是对标图搜索模式，请结合图片识别对应产品并搜索源头工厂与1688店铺。" : ""}
+
+返回 JSON，格式必须严格如下：
+{
+  "factories": [...],
+  "marketplaces1688": [...],
+  "suggestedKeywords": [...]
+}
+`;
 
   const parts: any[] = [{ text: prompt }];
 
@@ -463,16 +483,17 @@ ${hasImages ? "【对标图品搜索模式】: 请分析提供的对标产品图
       responseSchema: {
         type: Type.OBJECT,
         properties: {
-          suppliers: {
+          factories: {
             type: Type.ARRAY,
             items: {
               type: Type.OBJECT,
               properties: {
+                id: { type: Type.STRING },
                 name: { type: Type.STRING },
                 nameEn: { type: Type.STRING },
                 type: {
                   type: Type.STRING,
-                  enum: ["工厂", "贸易", "OEM", "贴牌", "其他"],
+                  enum: ["工厂", "制造商", "OEM", "贴牌", "其他"],
                 },
                 products: {
                   type: Type.ARRAY,
@@ -482,13 +503,12 @@ ${hasImages ? "【对标图品搜索模式】: 请分析提供的对标产品图
                 source: { type: Type.STRING },
                 sourceType: {
                   type: Type.STRING,
-                  enum: ["official", "1688", "google"],
+                  enum: ["official", "google"],
                 },
                 phone: { type: Type.STRING },
                 whatsapp: { type: Type.STRING },
                 email: { type: Type.STRING },
                 website: { type: Type.STRING },
-                platform1688: { type: Type.STRING },
                 isOfficialWebsite: { type: Type.BOOLEAN },
                 isCorporateEmail: { type: Type.BOOLEAN },
                 matchType: {
@@ -498,13 +518,44 @@ ${hasImages ? "【对标图品搜索模式】: 请分析提供的对标产品图
               },
               required: [
                 "name",
-                "type",
                 "products",
                 "location",
+                "sourceType",
                 "isOfficialWebsite",
                 "isCorporateEmail",
                 "matchType",
               ],
+            },
+          },
+          marketplaces1688: {
+            type: Type.ARRAY,
+            items: {
+              type: Type.OBJECT,
+              properties: {
+                id: { type: Type.STRING },
+                title: { type: Type.STRING },
+                shopName: { type: Type.STRING },
+                type: {
+                  type: Type.STRING,
+                  enum: ["shop", "product"],
+                },
+                products: {
+                  type: Type.ARRAY,
+                  items: { type: Type.STRING },
+                },
+                location: { type: Type.STRING },
+                url: { type: Type.STRING },
+                source: { type: Type.STRING },
+                sourceType: {
+                  type: Type.STRING,
+                  enum: ["1688"],
+                },
+                matchType: {
+                  type: Type.STRING,
+                  enum: ["keyword", "visual"],
+                },
+              },
+              required: ["title", "url", "type", "sourceType", "matchType"],
             },
           },
           suggestedKeywords: {
@@ -517,24 +568,58 @@ ${hasImages ? "【对标图品搜索模式】: 请分析提供的对标产品图
   });
 
   let hunterResult: {
-    suppliers: any[];
-    suggestedKeywords: string[];
+    factories?: any[];
+    marketplaces1688?: any[];
+    suggestedKeywords?: string[];
   };
 
   try {
     hunterResult = JSON.parse(
-      resp.text || '{"suppliers":[],"suggestedKeywords":[]}'
+      resp.text ||
+        '{"factories":[],"marketplaces1688":[],"suggestedKeywords":[]}'
     );
   } catch (err) {
-    hunterResult = { suppliers: [], suggestedKeywords: [] };
+    hunterResult = {
+      factories: [],
+      marketplaces1688: [],
+      suggestedKeywords: [],
+    };
   }
 
-  const normalizedSuppliers = (hunterResult.suppliers || []).map((s: any) => ({
-    ...s,
-    sourceType: s.sourceType || (s.platform1688 ? "1688" : s.website ? "official" : "google"),
-    platform1688: s.platform1688 || "",
-    website: s.website || "",
-  }));
+  const normalizedFactories = (hunterResult.factories || []).map(
+    (f: any, idx: number) => ({
+      id: f.id || `factory-${idx + 1}`,
+      name: f.name || "",
+      nameEn: f.nameEn || "",
+      type: f.type || "工厂",
+      products: Array.isArray(f.products) ? f.products.filter(Boolean) : [],
+      location: f.location || "",
+      source: f.source || f.website || "",
+      sourceType: f.sourceType === "official" ? "official" : "google",
+      phone: f.phone || "",
+      whatsapp: f.whatsapp || "",
+      email: f.email || "",
+      website: f.website || "",
+      isOfficialWebsite: Boolean(f.website) && f.isOfficialWebsite !== false,
+      isCorporateEmail: Boolean(f.email) && f.isCorporateEmail !== false,
+      matchType: f.matchType === "visual" ? "visual" : "keyword",
+    })
+  );
+
+  const normalized1688 = (hunterResult.marketplaces1688 || []).map(
+    (item: any, idx: number) => ({
+      id: item.id || `1688-${idx + 1}`,
+      title: item.title || item.shopName || "",
+      shopName: item.shopName || "",
+      type: item.type === "product" ? "product" : "shop",
+      products: Array.isArray(item.products) ? item.products.filter(Boolean) : [],
+      location: item.location || "",
+      url: item.url || "",
+      source: item.source || item.url || "",
+      sourceType: "1688",
+      matchType: item.matchType === "visual" ? "visual" : "keyword",
+    })
+  ).filter((item: any) => item.url);
 
   const sources: Source[] =
     (resp.candidates?.[0]?.groundingMetadata?.groundingChunks || [])
@@ -543,6 +628,16 @@ ${hasImages ? "【对标图品搜索模式】: 请分析提供的对标产品图
         title: c.web.title,
         uri: c.web.uri,
       }));
+
+  return {
+    hunterResult: {
+      factories: normalizedFactories,
+      marketplaces1688: normalized1688,
+      suggestedKeywords: hunterResult.suggestedKeywords || [],
+    },
+    sources,
+  };
+};
 
   return {
     hunterResult: {
