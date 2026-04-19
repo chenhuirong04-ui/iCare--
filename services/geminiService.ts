@@ -465,67 +465,59 @@ ${hasImages ? "【对标图品搜索模式】: 请分析提供的对标产品图
     });
   }
 
-  const resp = await ai.models.generateContent({
-    model: "gemini-3.1-pro-preview",
-    contents: [
-      {
-        parts,
-      },
-    ],
-    config: {
-      tools: [{ googleSearch: {} }],
-      responseMimeType: "application/json",
-      responseSchema: {
-        type: Type.OBJECT,
-        properties: {
-          suppliers: {
-            type: Type.ARRAY,
-            items: {
-              type: Type.OBJECT,
-              properties: {
-                name: { type: Type.STRING },
-                nameEn: { type: Type.STRING },
-                type: {
-                  type: Type.STRING,
-                  enum: ["工厂", "贸易", "OEM", "贴牌", "其他"],
-                },
-                products: {
-                  type: Type.ARRAY,
-                  items: { type: Type.STRING },
-                },
-                location: { type: Type.STRING },
-                source: { type: Type.STRING },
-                phone: { type: Type.STRING },
-                whatsapp: { type: Type.STRING },
-                email: { type: Type.STRING },
-                website: { type: Type.STRING },
-                isOfficialWebsite: { type: Type.BOOLEAN },
-                isCorporateEmail: { type: Type.BOOLEAN },
-                matchType: {
-                  type: Type.STRING,
-                  enum: ["keyword", "visual"],
-                },
-              },
-              required: [
-                "name",
-                "type",
-                "products",
-                "location",
-                "isOfficialWebsite",
-                "isCorporateEmail",
-                "matchType",
-              ],
-            },
-          },
-          suggestedKeywords: {
-            type: Type.ARRAY,
-            items: { type: Type.STRING },
-          },
-        },
-      },
-    },
-  });
+  // ===== 新逻辑：关键词生成 =====
 
+const keywordPrompt = `
+用户需求：${q}
+
+请你把这个需求转化为适合搜索中国工厂的关键词。
+
+返回 JSON：
+
+{
+  "keywords1688": [],
+  "keywordsGoogle": []
+}
+
+要求：
+- keywords1688：中文，适合1688
+- keywordsGoogle：英文，适合Google
+- 每个给5个关键词
+`;
+
+const keywordResp = await ai.models.generateContent({
+  model: "gemini-3.1-pro-preview",
+  contents: [{ parts: [{ text: keywordPrompt }] }],
+  config: {
+    responseMimeType: "application/json",
+  },
+});
+
+let keywords = { keywords1688: [], keywordsGoogle: [] };
+
+try {
+  keywords = JSON.parse(keywordResp.text || "{}");
+} catch {}
+
+const suppliers = (keywords.keywords1688 || []).map((k: string) => ({
+  name: `建议搜索: ${k}`,
+  type: "建议",
+  products: [k],
+  location: "中国",
+  source: "1688",
+  isOfficialWebsite: false,
+  isCorporateEmail: false,
+  matchType: "keyword",
+}));
+
+const hunterResult = {
+  suppliers,
+  suggestedKeywords: keywords.keywords1688 || [],
+};
+
+const sources: Source[] = [];
+
+return { hunterResult, sources };
   let hunterResult: {
     suppliers: any[];
     suggestedKeywords: string[];
