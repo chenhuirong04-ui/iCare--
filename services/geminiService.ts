@@ -528,18 +528,7 @@ const hunterResult = {
 const sources: Source[] = [];
 
 return { hunterResult, sources };
-  let hunterResult: {
-    suppliers: any[];
-    suggestedKeywords: string[];
-  };
-
-  try {
-    hunterResult = JSON.parse(
-      resp.text || '{"suppliers":[],"suggestedKeywords":[]}'
-    );
-  } catch (err) {
-    hunterResult = { suppliers: [], suggestedKeywords: [] };
-  }
+  
 
   const sources: Source[] =
     (resp.candidates?.[0]?.groundingMetadata?.groundingChunks || [])
