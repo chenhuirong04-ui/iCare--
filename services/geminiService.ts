@@ -1,5 +1,6 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import ExcelJS from "exceljs";
+import "text-encoding-gbk";
 import {
   SupplierQuote,
   GCIQuote,
@@ -110,7 +111,19 @@ function clean1688Keyword(text: string): string {
     .replace(/\s+/g, " ")
     .trim();
 }
+function encode1688KeywordGBK(text: string): string {
+  const clean = clean1688Keyword(text).trim();
 
+  const encoder = new (window as any).TextEncoder("gb18030", {
+    NONSTANDARD_allowLegacyEncoding: true,
+  });
+
+  const bytes: Uint8Array = encoder.encode(clean);
+
+  return Array.from(bytes)
+    .map((b) => `%${b.toString(16).toUpperCase().padStart(2, "0")}`)
+    .join("");
+}
 function isOriginal1688Link(url?: string): boolean {
   if (!url) return false;
   return (
@@ -232,17 +245,14 @@ ${q}
 }
 
 function build1688Url(keyword: string, maxPrice?: number | null): string {
-  const cleaned = clean1688Keyword(keyword);
-  const safeKeyword = (cleaned || keyword || "")
-    .replace(/[^\u4e00-\u9fa5a-zA-Z0-9]/g, "")
-    .trim();
+  const encodedKeyword = encode1688KeywordGBK(keyword);
 
   const pricePart =
     typeof maxPrice === "number" && !Number.isNaN(maxPrice)
       ? `&priceStart=0&priceEnd=${maxPrice}`
       : "";
 
-  return `https://s.1688.com/selloffer/offer_search.htm?keywords=${safeKeyword}${pricePart}`;
+  return `https://s.1688.com/selloffer/offer_search.htm?keywords=${encodedKeyword}${pricePart}`;
 }
 
 async function parseExcelBinary(
