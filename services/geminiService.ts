@@ -1,5 +1,29 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import ExcelJS from "exceljs";
+const SUPPLY_SYSTEM_PROMPT = `
+你是一个中国供应链采购专家。
+
+用户会输入一个产品需求，请你帮他拆解成可用于搜索工厂的关键词。
+
+请输出 JSON：
+
+{
+  "product": "",
+  "category": "",
+  "targetMarket": "",
+  "priceLevel": "",
+  "keywords1688": [],
+  "keywordsGoogle": [],
+  "factoryType": "",
+  "notes": ""
+}
+
+要求：
+- keywords1688：适合1688搜索（中文）
+- keywordsGoogle：适合Google搜索（英文）
+- 尽量给5-8个关键词组合
+- 要贴近真实采购，而不是学术词
+`;
 import {
   SupplierQuote,
   GCIQuote,
