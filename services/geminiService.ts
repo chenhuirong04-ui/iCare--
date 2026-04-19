@@ -1,29 +1,5 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import ExcelJS from "exceljs";
-const SUPPLY_SYSTEM_PROMPT = `
-你是一个中国供应链采购专家。
-
-用户会输入一个产品需求，请你帮他拆解成可用于搜索工厂的关键词。
-
-请输出 JSON：
-
-{
-  "product": "",
-  "category": "",
-  "targetMarket": "",
-  "priceLevel": "",
-  "keywords1688": [],
-  "keywordsGoogle": [],
-  "factoryType": "",
-  "notes": ""
-}
-
-要求：
-- keywords1688：适合1688搜索（中文）
-- keywordsGoogle：适合Google搜索（英文）
-- 尽量给5-8个关键词组合
-- 要贴近真实采购，而不是学术词
-`;
 import {
   SupplierQuote,
   GCIQuote,
@@ -141,12 +117,18 @@ async function parseExcelBinary(
         const raw = getCellText(cell).trim();
         const lower = raw.toLowerCase();
 
-        if (!detectedSupplier && /supplier|vendor|from|供应商|厂家|公司|抬:/i.test(lower)) {
+        if (
+          !detectedSupplier &&
+          /supplier|vendor|from|供应商|厂家|公司|抬:/i.test(lower)
+        ) {
           const v = getCellText(row.getCell(colNum + 1)).trim();
           if (v.length > 2) detectedSupplier = v;
         }
 
-        if (!detectedCurrency && /currency|货币|usd|aed|cny|rmb|eur|gbp/i.test(lower)) {
+        if (
+          !detectedCurrency &&
+          /currency|货币|usd|aed|cny|rmb|eur|gbp/i.test(lower)
+        ) {
           const m = (raw + getCellText(row.getCell(colNum + 1)))
             .toUpperCase()
             .match(/USD|AED|CNY|RMB|EUR|GBP/);
@@ -442,6 +424,7 @@ export const generateSourcingReport = async (
 3. 必须排除以下已知的供应商主体(去重列表): [${ex.join(", ")}]。
 4. 如果在当前搜索条件下没有发现新的唯一工厂主体，请返回空数组。
 5. 优先定位真实的制造型工厂（Factory/Manufacturer），而非贸易商。
+6. 如果来源是1688，请直接返回1688链接，不要伪造官网。
 
 ${hasImages ? "【对标图品搜索模式】: 请分析提供的对标产品图片，定位对应的真实源头厂。" : ""}
 
@@ -449,6 +432,8 @@ ${hasImages ? "【对标图品搜索模式】: 请分析提供的对标产品图
 - 判定官网：检查 website 是否为独立官方域名。
 - 判定邮箱：检查 email 是否为企业域名邮箱。
 - 判定匹配类型 (matchType): 'visual' 或 'keyword'。
+- 判定来源类型 (sourceType): 'official' | '1688' | 'google'
+- 如果是1688结果，请填写 platform1688
 
 返回 JSON 格式，必须包含 suppliers 数组。`;
 
@@ -495,10 +480,15 @@ ${hasImages ? "【对标图品搜索模式】: 请分析提供的对标产品图
                 },
                 location: { type: Type.STRING },
                 source: { type: Type.STRING },
+                sourceType: {
+                  type: Type.STRING,
+                  enum: ["official", "1688", "google"],
+                },
                 phone: { type: Type.STRING },
                 whatsapp: { type: Type.STRING },
                 email: { type: Type.STRING },
                 website: { type: Type.STRING },
+                platform1688: { type: Type.STRING },
                 isOfficialWebsite: { type: Type.BOOLEAN },
                 isCorporateEmail: { type: Type.BOOLEAN },
                 matchType: {
@@ -539,6 +529,13 @@ ${hasImages ? "【对标图品搜索模式】: 请分析提供的对标产品图
     hunterResult = { suppliers: [], suggestedKeywords: [] };
   }
 
+  const normalizedSuppliers = (hunterResult.suppliers || []).map((s: any) => ({
+    ...s,
+    sourceType: s.sourceType || (s.platform1688 ? "1688" : s.website ? "official" : "google"),
+    platform1688: s.platform1688 || "",
+    website: s.website || "",
+  }));
+
   const sources: Source[] =
     (resp.candidates?.[0]?.groundingMetadata?.groundingChunks || [])
       .filter((c: any) => c.web)
@@ -547,7 +544,13 @@ ${hasImages ? "【对标图品搜索模式】: 请分析提供的对标产品图
         uri: c.web.uri,
       }));
 
-  return { hunterResult, sources };
+  return {
+    hunterResult: {
+      ...hunterResult,
+      suppliers: normalizedSuppliers,
+    },
+    sources,
+  };
 };
 
 export const analyzeRFQImages = async (i: any): Promise<RFQProduct[]> => {
