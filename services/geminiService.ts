@@ -734,8 +734,8 @@ ${hasImages ? "这是对标图搜索模式，请结合图片识别对应产品�
             items: { type: Type.STRING },
           },
         },
-      },
-    ],
+     },
+   },
   });
 
   let hunterResult: {
