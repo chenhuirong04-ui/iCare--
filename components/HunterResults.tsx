@@ -29,6 +29,15 @@ type Marketplace1688Item = {
   selected?: boolean;
 };
 
+type AnalyzedIntent = {
+  originalQuery?: string;
+  factoryKeyword?: string;
+  keyword1688?: string;
+  maxPrice?: number | null;
+  currency?: string;
+  priorities?: string[];
+};
+
 export const HunterResults: React.FC<HunterResultsProps> = ({
   initialResult,
   sources,
@@ -37,6 +46,7 @@ export const HunterResults: React.FC<HunterResultsProps> = ({
 }) => {
   const [factories, setFactories] = useState<FactoryItem[]>([]);
   const [marketplaces1688, setMarketplaces1688] = useState<Marketplace1688Item[]>([]);
+  const [analyzedIntent, setAnalyzedIntent] = useState<AnalyzedIntent | null>(null);
 
   const [filterType, setFilterType] = useState<string>('all');
   const [onlyHighCredibility, setOnlyHighCredibility] = useState(false);
@@ -62,6 +72,7 @@ export const HunterResults: React.FC<HunterResultsProps> = ({
 
     setFactories(initialFactories);
     setMarketplaces1688(initial1688);
+    setAnalyzedIntent(((initialResult as any)?.analyzedIntent || null));
     setActiveSources(sources || []);
     setReachedBoundary(false);
   }, [initialResult, sources]);
@@ -74,7 +85,7 @@ export const HunterResults: React.FC<HunterResultsProps> = ({
   });
 
   const getCopyText = (lang: 'cn' | 'en', supplierName: string) => {
-    const productName = originalRequest?.query || '相关产品';
+    const productName = analyzedIntent?.factoryKeyword || originalRequest?.query || '相关产品';
     if (lang === 'cn') {
       return `您好，我们是 GLOBALCARE INFO GENERAL TRADING FZCO（GCI），在迪拜采购【${productName}】做长期合作。请问贵司是否支持 OEM/贴牌？请提供：1）MOQ 2）报价（含包装）3）交期 4）认证（如ISO）5）样品。谢谢。——Chris +971 58 556 6809 / chrischen1579@gmail.com`;
     }
@@ -86,6 +97,42 @@ export const HunterResults: React.FC<HunterResultsProps> = ({
       setCopyStatus({ [id]: '已复制' });
       setTimeout(() => setCopyStatus({}), 2000);
     });
+  };
+
+  const build1688SearchUrl = (keyword?: string, maxPrice?: number | null) => {
+    const safeKeyword = (keyword || '').trim();
+    const pricePart =
+      typeof maxPrice === 'number' && !Number.isNaN(maxPrice)
+        ? `&priceStart=0&priceEnd=${maxPrice}`
+        : '';
+    return `https://s.1688.com/selloffer/offer_search.htm?keywords=${encodeURIComponent(
+      safeKeyword
+    )}${pricePart}`;
+  };
+
+  const buildFactorySearchUrl = (keyword?: string) => {
+    const safeKeyword = (keyword || '').trim();
+    return `https://www.google.com/search?q=${encodeURIComponent(safeKeyword)}`;
+  };
+
+  const handleOpen1688Search = () => {
+    const keyword =
+      analyzedIntent?.keyword1688 ||
+      (Array.isArray(marketplaces1688?.[0]?.products) ? marketplaces1688[0].products?.[0] : '') ||
+      originalRequest?.query ||
+      '';
+
+    const url = build1688SearchUrl(keyword, analyzedIntent?.maxPrice);
+    window.open(url, '_blank', 'noopener,noreferrer');
+  };
+
+  const handleOpenFactorySearch = () => {
+    const keyword =
+      analyzedIntent?.factoryKeyword ||
+      originalRequest?.query ||
+      '';
+    const url = buildFactorySearchUrl(keyword);
+    window.open(url, '_blank', 'noopener,noreferrer');
   };
 
   const handleContinueSearch = async () => {
@@ -142,6 +189,9 @@ export const HunterResults: React.FC<HunterResultsProps> = ({
         if (next1688.length > 0) {
           setMarketplaces1688((prev) => [...prev, ...next1688]);
         }
+        if ((moreResult as any)?.hunterResult?.analyzedIntent) {
+          setAnalyzedIntent((moreResult as any).hunterResult.analyzedIntent);
+        }
         if ((moreResult as any)?.sources?.length) {
           setActiveSources((prev) => [...prev, ...(moreResult as any).sources]);
         }
@@ -197,6 +247,74 @@ export const HunterResults: React.FC<HunterResultsProps> = ({
 
   return (
     <div className="w-full max-w-4xl mx-auto space-y-6 animate-fade-in-up">
+      {/* Demand Analysis */}
+      {analyzedIntent && (
+        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
+          <div className="flex items-center justify-between gap-4 mb-4">
+            <div>
+              <h4 className="text-sm font-black text-icare-900 uppercase tracking-wide">
+                🧠 Claude / Gemini 需求分析结果
+              </h4>
+              <p className="text-xs text-slate-500 mt-1">
+                系统已先完成需求拆解，再分别执行工厂搜索与 1688 搜索
+              </p>
+            </div>
+            <div className="text-[10px] font-bold text-slate-400 uppercase">
+              Structured Intent
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="bg-slate-50 rounded-xl border border-slate-100 p-4">
+              <div className="text-[10px] font-black text-slate-400 uppercase mb-2">工厂搜索词</div>
+              <div className="text-sm font-bold text-slate-800 break-words">
+                {analyzedIntent.factoryKeyword || '未识别'}
+              </div>
+            </div>
+
+            <div className="bg-slate-50 rounded-xl border border-slate-100 p-4">
+              <div className="text-[10px] font-black text-slate-400 uppercase mb-2">1688 商品词</div>
+              <div className="text-sm font-bold text-slate-800 break-words">
+                {analyzedIntent.keyword1688 || '未识别'}
+              </div>
+            </div>
+
+            <div className="bg-slate-50 rounded-xl border border-slate-100 p-4">
+              <div className="text-[10px] font-black text-slate-400 uppercase mb-2">价格上限</div>
+              <div className="text-sm font-bold text-slate-800">
+                {typeof analyzedIntent.maxPrice === 'number'
+                  ? `${analyzedIntent.maxPrice} ${analyzedIntent.currency || 'CNY'}`
+                  : '未指定'}
+              </div>
+            </div>
+
+            <div className="bg-slate-50 rounded-xl border border-slate-100 p-4">
+              <div className="text-[10px] font-black text-slate-400 uppercase mb-2">优先条件</div>
+              <div className="text-sm font-bold text-slate-800 break-words">
+                {analyzedIntent.priorities?.length
+                  ? analyzedIntent.priorities.join(' / ')
+                  : '无'}
+              </div>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap gap-3 mt-4">
+            <button
+              onClick={handleOpenFactorySearch}
+              className="px-4 py-2 rounded-xl bg-icare-accent text-white text-sm font-bold shadow hover:bg-sky-500 transition-all"
+            >
+              🔎 打开工厂搜索
+            </button>
+            <button
+              onClick={handleOpen1688Search}
+              className="px-4 py-2 rounded-xl bg-amber-500 text-white text-sm font-bold shadow hover:bg-amber-600 transition-all"
+            >
+              🛒 打开1688搜索
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Primary Actions Area */}
       <div className="bg-white p-6 rounded-2xl shadow-xl border border-slate-200 sticky top-20 z-40 flex flex-col md:flex-row items-center justify-between gap-6">
         <div className="flex flex-col gap-1 w-full md:w-auto">
@@ -532,7 +650,7 @@ export const HunterResults: React.FC<HunterResultsProps> = ({
       {/* 1688区 */}
       <div className="space-y-3 pt-2">
         <div className="flex items-center justify-between px-1">
-          <h4 className="font-extrabold text-base text-amber-700">🛒 1688 店铺 / 商品</h4>
+          <h4 className="font-extrabold text-base text-amber-700">🛒 1688 搜索入口</h4>
           <div className="text-[10px] font-bold text-slate-400 uppercase">
             {marketplaces1688.length} Results
           </div>
@@ -540,12 +658,18 @@ export const HunterResults: React.FC<HunterResultsProps> = ({
 
         {marketplaces1688.length === 0 ? (
           <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 text-sm text-slate-400">
-            当前没有独立的 1688 店铺或商品结果
+            当前没有独立的 1688 搜索入口
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {marketplaces1688.map((m) => {
               const isVisual = m.matchType === 'visual';
+              const suggestedKeyword =
+                analyzedIntent?.keyword1688 ||
+                (Array.isArray(m.products) && m.products[0]) ||
+                m.title ||
+                m.shopName ||
+                '';
 
               return (
                 <div
@@ -558,7 +682,7 @@ export const HunterResults: React.FC<HunterResultsProps> = ({
                         1688
                       </span>
                       <span className="text-[8px] px-2 py-0.5 bg-slate-100 text-slate-500 border border-slate-200 rounded-full font-black uppercase tracking-widest">
-                        {m.type === 'product' ? '商品' : '店铺'}
+                        {m.type === 'product' ? '商品入口' : '店铺入口'}
                       </span>
                       <span className="text-[8px] px-2 py-0.5 bg-slate-100 text-slate-400 border border-slate-200 rounded-full font-black uppercase tracking-widest">
                         {isVisual ? '图品匹配' : '关键词匹配'}
@@ -579,15 +703,26 @@ export const HunterResults: React.FC<HunterResultsProps> = ({
                       )}
                     </div>
 
-                    <div className="flex items-center gap-3">
-                      <span className="text-[10px] px-2 py-1 rounded font-extrabold uppercase flex-shrink-0 bg-amber-50 text-amber-700">
-                        {m.type === 'product' ? '1688 商品' : '1688 店铺'}
-                      </span>
-                      {m.location && (
-                        <div className="text-[10px] flex items-center gap-1.5 text-slate-500 font-bold bg-slate-50 w-fit px-2 py-1 rounded">
-                          <span className="text-sm">📍</span> {m.location}
+                    <div className="grid grid-cols-1 gap-3">
+                      <div className="bg-amber-50/60 border border-amber-100 rounded-xl p-3">
+                        <div className="text-[10px] font-black text-amber-700 uppercase mb-1">
+                          推荐 1688 搜索词
                         </div>
-                      )}
+                        <div className="text-sm font-bold text-slate-800 break-words">
+                          {suggestedKeyword || '未生成'}
+                        </div>
+                      </div>
+
+                      <div className="bg-slate-50 border border-slate-100 rounded-xl p-3">
+                        <div className="text-[10px] font-black text-slate-400 uppercase mb-1">
+                          价格上限
+                        </div>
+                        <div className="text-sm font-bold text-slate-800">
+                          {typeof analyzedIntent?.maxPrice === 'number'
+                            ? `${analyzedIntent.maxPrice} ${analyzedIntent?.currency || 'CNY'}`
+                            : '未指定'}
+                        </div>
+                      </div>
                     </div>
 
                     <div className="flex flex-wrap gap-2">
@@ -601,20 +736,36 @@ export const HunterResults: React.FC<HunterResultsProps> = ({
                       ))}
                     </div>
 
-                    <a
-                      href={m.url}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="flex items-center gap-2 p-2 rounded-lg transition-colors border border-amber-100 text-amber-700 hover:bg-amber-50"
-                    >
-                      <span className="text-sm">🔗</span>
-                      <span className="text-[10px] font-extrabold truncate">{m.url}</span>
-                    </a>
+                    <div className="grid grid-cols-2 gap-3">
+                      <button
+                        onClick={() => {
+                          navigator.clipboard.writeText(suggestedKeyword || '');
+                          setCopyStatus({ [`kw-${m.id}`]: '已复制关键词' });
+                          setTimeout(() => setCopyStatus({}), 2000);
+                        }}
+                        className="flex items-center justify-center gap-2 p-2 rounded-lg transition-colors border border-slate-200 text-slate-600 hover:bg-slate-50"
+                      >
+                        <span className="text-sm">📋</span>
+                        <span className="text-[10px] font-extrabold">
+                          {copyStatus[`kw-${m.id}`] || '复制关键词'}
+                        </span>
+                      </button>
+
+                      <a
+                        href={m.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="flex items-center justify-center gap-2 p-2 rounded-lg transition-colors border border-amber-100 text-amber-700 hover:bg-amber-50"
+                      >
+                        <span className="text-sm">🔗</span>
+                        <span className="text-[10px] font-extrabold">打开1688搜索</span>
+                      </a>
+                    </div>
                   </div>
 
                   <div className="border-t border-slate-100 bg-slate-50/50 px-4 py-3">
                     <div className="text-[10px] text-slate-400 font-bold">
-                      独立 1688 来源，不再挂在工厂资料里作为“搜索按钮”
+                      已生成 1688 搜索入口，带入推荐关键词与价格区间，可在 1688 页面继续筛选
                     </div>
                   </div>
                 </div>
