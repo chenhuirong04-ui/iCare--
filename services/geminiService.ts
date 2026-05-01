@@ -281,7 +281,7 @@ async function parseAIBinary(file: File): Promise<{
   const ai = getAI();
   const buffer = await file.arrayBuffer();
   const base64 = arrayBufferToBase64(buffer);
-  const prompt = "你是"供应商报价全量事实提取器"。任务：100%还原文件中的产品与价格对应关系，只返回JSON，不要任何解释。";
+  const prompt = `你是供应商报价全量事实提取器。任务：100%还原文件中的产品与价格对应关系，只返回JSON，不要任何解释。`;
   const response = await ai.models.generateContent({
     model: "gemini-2.0-flash",
     contents: [{ parts: [{ text: prompt }, { inlineData: { data: base64, mimeType: file.type } }] }],
