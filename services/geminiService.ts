@@ -451,7 +451,9 @@ ${hasImages ? "这是图片搜源模式，请结合图片识别产品类型后�
     model: "gemini-2.0-flash",
     contents: [{ parts }],
     config: {
-      tools: [{ googleSearch: {} }],
+     config: {
+  responseMimeType: "application/json",
+  responseSchema: {
       responseMimeType: "application/json",
       responseSchema: {
         type: Type.OBJECT,
