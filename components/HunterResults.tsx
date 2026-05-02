@@ -1,185 +1,293 @@
-import React from "react";
+import React, { useState, useRef } from 'react';
+import { ReportHeader } from './components/ReportHeader';
+import { Footer } from './components/Footer';
+import { SourcingForm } from './components/SourcingForm';
+import { RFQGenerator } from './components/RFQGenerator';
+import { QuotationGenerator } from './components/QuotationGenerator';
+import { HunterResults } from './components/HunterResults';
+import { generateSourcingReport } from './services/geminiService';
+import { AppState, SourcingResult, SourcingRequest, SessionImage, SourcingMode } from './types';
 
-type AnySupplier = any;
-
-function isValidUrl(url?: string) {
-  if (!url) return false;
-  try {
-    const u = new URL(url);
-    return u.protocol === "http:" || u.protocol === "https:";
-  } catch {
-    return false;
-  }
+enum Tab {
+  HUNTER = 'HUNTER',
+  RFQ = 'RFQ',
+  QUOTE = 'QUOTE'
 }
 
-function toProductsText(products: any) {
-  if (!products) return "";
-  if (Array.isArray(products)) return products.filter(Boolean).join("、");
-  return String(products);
-}
+export default function App() {
+  const [activeTab, setActiveTab] = useState<Tab>(Tab.HUNTER);
+  const [appState, setAppState] = useState<AppState>(AppState.IDLE);
+  const [result, setResult] = useState<SourcingResult | null>(null);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [lastRequest, setLastRequest] = useState<SourcingRequest | null>(null);
 
-function getGoogleSearchUrl(item: AnySupplier) {
-  const q = [
-    item.name,
-    item.location,
-    item.country,
-    "supplier manufacturer official website contact",
-  ]
-    .filter(Boolean)
-    .join(" ");
+  const abortControllerRef = useRef<AbortController | null>(null);
+  const retryCountRef = useRef(0);
 
-  return `https://www.google.com/search?q=${encodeURIComponent(q)}`;
-}
+  const [sessionImages, setSessionImages] = useState<SessionImage[]>([]);
 
-function getSuppliersFromProps(props: any): AnySupplier[] {
-  if (Array.isArray(props.results)) return props.results;
-  if (Array.isArray(props.factories)) return props.factories;
-  if (Array.isArray(props.result?.hunterResult?.factories)) return props.result.hunterResult.factories;
-  if (Array.isArray(props.hunterResult?.factories)) return props.hunterResult.factories;
-  return [];
-}
+  const getReadableError = (err: any): string => {
+    if (!err) return "未知错误";
 
-export const HunterResults = (props: any) => {
-  const suppliers = getSuppliersFromProps(props);
+    if (typeof err === "string") return err;
 
-  if (!suppliers || suppliers.length === 0) {
-    return null;
-  }
+    if (err.message) return err.message;
+
+    try {
+      return JSON.stringify(err, null, 2);
+    } catch {
+      return "无法解析错误信息";
+    }
+  };
+
+  const handleSourcingRequest = async (
+    query: string,
+    images?: { data: string; mimeType: string }[],
+    mode: SourcingMode = 'quick'
+  ) => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+
+    abortControllerRef.current = new AbortController();
+
+    setAppState(AppState.LOADING);
+    setErrorMsg(null);
+    setResult(null);
+    setLastRequest({ query, images, mode });
+
+    try {
+      const report = await generateSourcingReport(
+        query,
+        images,
+        [],
+        mode,
+        abortControllerRef.current.signal
+      );
+
+      console.log("Sourcing report:", report);
+
+      if (!report || !report.hunterResult) {
+        throw new Error("接口返回为空：没有 hunterResult 数据。");
+      }
+
+      setResult(report);
+      setAppState(AppState.SUCCESS);
+      retryCountRef.current = 0;
+    } catch (err: any) {
+      const realError = getReadableError(err);
+
+      if (realError === "ABORTED" || err?.name === "AbortError") {
+        setAppState(AppState.ABORTED);
+        return;
+      }
+
+      console.error("Search Error Full:", err);
+
+      if (realError === "TIMEOUT" || realError === "Network Error") {
+        if (retryCountRef.current < 2) {
+          retryCountRef.current++;
+          console.warn(`Attempt ${retryCountRef.current} failed. Retrying with quick mode...`);
+          handleSourcingRequest(query, images, 'quick');
+          return;
+        }
+
+        setAppState(AppState.TIMEOUT);
+        setErrorMsg(realError);
+      } else {
+        setErrorMsg(realError);
+        setAppState(AppState.ERROR);
+      }
+    }
+  };
+
+  const handleStopSearch = () => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      setAppState(AppState.ABORTED);
+    }
+  };
+
+  const handleFileSync = (image: SessionImage | null) => {
+    if (image) {
+      setSessionImages(prev => {
+        const exists = prev.find(p => p.data === image.data);
+        if (exists) return prev;
+        return [...prev, image];
+      });
+    }
+  };
+
+  const handleKeywordSearch = (keyword: string) => {
+    handleSourcingRequest(`寻找优质源头工厂: ${keyword}`, undefined, 'quick');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
 
   return (
-    <div style={{ marginTop: 24 }}>
-      <div
-        style={{
-          background: "#08162d",
-          color: "#fff",
-          borderRadius: 14,
-          padding: "22px 28px",
-          marginBottom: 18,
-        }}
-      >
-        <div style={{ fontSize: 12, letterSpacing: 2, opacity: 0.75 }}>
-          ICARE FACTORY SEARCH
-        </div>
-        <h2 style={{ margin: "10px 0 6px", fontSize: 24 }}>
-          工厂结果
-        </h2>
-        <p style={{ margin: 0, fontSize: 14, opacity: 0.8 }}>
-          当前只展示 AI 提取到的供应商线索；官网必须人工核验，不再生成假官网。
-        </p>
-      </div>
+    <div className="min-h-screen flex flex-col bg-slate-50 text-slate-900 font-sans">
+      <ReportHeader role="寻源猎手 (Fast Trace)" />
 
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
-          gap: 16,
-        }}
-      >
-        {suppliers.map((item: AnySupplier, index: number) => {
-          const productsText = toProductsText(item.products);
-          const websiteIsValid = isValidUrl(item.website);
-          const googleUrl = getGoogleSearchUrl(item);
-
-          return (
-            <div
-              key={item.id || index}
-              style={{
-                padding: 20,
-                borderRadius: 14,
-                background: "#fff",
-                border: "1px solid #e5e7eb",
-                boxShadow: "0 6px 18px rgba(15, 23, 42, 0.06)",
-              }}
+      <div className="bg-white border-b border-slate-200 sticky top-0 z-50">
+        <div className="container mx-auto px-4">
+          <div className="flex gap-4 sm:gap-6">
+            <button
+              onClick={() => setActiveTab(Tab.HUNTER)}
+              className={`py-4 px-2 sm:px-4 text-xs font-bold transition-all border-b-4 flex items-center gap-2 ${
+                activeTab === Tab.HUNTER
+                  ? 'border-icare-accent text-icare-900'
+                  : 'border-transparent text-slate-400 hover:text-slate-600'
+              }`}
             >
-              <h3 style={{ margin: "0 0 8px", fontSize: 18, color: "#0f172a" }}>
-                {item.name || item.nameEn || "未命名供应商"}
-              </h3>
+              <span>🎯</span> 供应商搜寻
+            </button>
 
-              <p style={{ margin: "0 0 10px", color: "#64748b", fontSize: 14 }}>
-                {item.location || item.country || "未知地区"}
-              </p>
-
-              {productsText && (
-                <p style={{ margin: "8px 0", fontSize: 14, color: "#334155" }}>
-                  <strong>主营产品：</strong>{productsText}
-                </p>
+            <button
+              onClick={() => setActiveTab(Tab.RFQ)}
+              className={`py-4 px-2 sm:px-4 text-xs font-bold transition-all border-b-4 flex items-center gap-2 ${
+                activeTab === Tab.RFQ
+                  ? 'border-icare-accent text-icare-900'
+                  : 'border-transparent text-slate-400 hover:text-slate-600'
+              }`}
+            >
+              <span>📄</span> 询盘表生成
+              {sessionImages.length > 0 && (
+                <span className="bg-icare-accent text-white text-[8px] px-1.5 py-0.5 rounded-full">
+                  {sessionImages.length}
+                </span>
               )}
+            </button>
 
-              {item.type && (
-                <p style={{ margin: "8px 0", fontSize: 14, color: "#334155" }}>
-                  <strong>类型：</strong>{item.type}
-                </p>
-              )}
-
-              {item.exportMarkets && (
-                <p style={{ margin: "8px 0", fontSize: 14, color: "#334155" }}>
-                  <strong>出口市场：</strong>{item.exportMarkets}
-                </p>
-              )}
-
-              {item.shippingNote && (
-                <p style={{ margin: "8px 0", fontSize: 14, color: "#334155" }}>
-                  <strong>运输备注：</strong>{item.shippingNote}
-                </p>
-              )}
-
-              {item.phone && (
-                <p style={{ margin: "8px 0", fontSize: 14, color: "#334155" }}>
-                  <strong>电话：</strong>{item.phone}
-                </p>
-              )}
-
-              {item.whatsapp && (
-                <p style={{ margin: "8px 0", fontSize: 14, color: "#334155" }}>
-                  <strong>WhatsApp：</strong>{item.whatsapp}
-                </p>
-              )}
-
-              {item.email && (
-                <p style={{ margin: "8px 0", fontSize: 14, color: "#334155" }}>
-                  <strong>邮箱：</strong>{item.email}
-                </p>
-              )}
-
-              <div style={{ display: "flex", gap: 10, marginTop: 16, flexWrap: "wrap" }}>
-                {websiteIsValid && (
-                  <a
-                    href={item.website}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    style={{
-                      padding: "8px 14px",
-                      borderRadius: 8,
-                      background: "#0f172a",
-                      color: "#fff",
-                      textDecoration: "none",
-                      fontSize: 13,
-                    }}
-                  >
-                    查看官网
-                  </a>
-                )}
-
-                <a
-                  href={googleUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  style={{
-                    padding: "8px 14px",
-                    borderRadius: 8,
-                    background: "#f1f5f9",
-                    color: "#0f172a",
-                    textDecoration: "none",
-                    fontSize: 13,
-                  }}
-                >
-                  Google核验
-                </a>
-              </div>
-            </div>
-          );
-        })}
+            <button
+              onClick={() => setActiveTab(Tab.QUOTE)}
+              className={`py-4 px-2 sm:px-4 text-xs font-bold transition-all border-b-4 flex items-center gap-2 ${
+                activeTab === Tab.QUOTE
+                  ? 'border-icare-accent text-icare-900'
+                  : 'border-transparent text-slate-400 hover:text-slate-600'
+              }`}
+            >
+              <span>💰</span> 报价单解析与生成
+            </button>
+          </div>
+        </div>
       </div>
+
+      <main className="flex-grow container mx-auto px-4 py-8">
+        {activeTab === Tab.HUNTER && (
+          <div className="flex flex-col items-center gap-10">
+            <div className="w-full">
+              {!result && appState !== AppState.LOADING && (
+                <div className="text-center mb-10">
+                  <h2 className="text-3xl font-extrabold text-icare-900 mb-3 tracking-tight">
+                    iCare 寻源猎手
+                  </h2>
+                  <p className="text-slate-600 max-w-lg mx-auto font-medium">
+                    深挖全球源头工厂，一键获取联系方式与沟通线索
+                  </p>
+                </div>
+              )}
+
+              <SourcingForm
+                onSubmit={handleSourcingRequest}
+                onStop={handleStopSearch}
+                onFileSync={handleFileSync}
+                appState={appState}
+              />
+            </div>
+
+            {appState === AppState.LOADING && (
+              <div className="w-full max-w-4xl bg-white p-12 rounded-2xl shadow-xl border border-slate-100 flex flex-col items-center justify-center animate-pulse">
+                <div className="w-16 h-16 border-4 border-icare-accent border-t-transparent rounded-full animate-spin mb-6"></div>
+                <h3 className="text-xl font-bold text-icare-900">
+                  🚀 猎手正在全网锁定供应商...
+                </h3>
+                <p className="text-slate-500 mt-2 font-medium">
+                  检索中：正在分析数据来源并验证联系方式
+                </p>
+                <button
+                  onClick={handleStopSearch}
+                  className="mt-8 text-xs font-bold text-slate-400 hover:text-red-500 underline"
+                >
+                  停止当前搜索
+                </button>
+              </div>
+            )}
+
+            {(appState === AppState.ERROR || appState === AppState.TIMEOUT) && (
+              <div className="w-full max-w-3xl bg-white border-2 border-red-100 p-8 rounded-2xl shadow-lg flex flex-col items-center text-center gap-4 animate-fade-in-up">
+                <div className="bg-red-500 text-white p-4 rounded-full shadow-lg">
+                  <svg className="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                </div>
+
+                <div className="w-full">
+                  <h3 className="text-xl font-bold text-icare-900 mb-2">
+                    {appState === AppState.TIMEOUT ? '搜索超时' : '请求失败'}
+                  </h3>
+
+                  <div className="bg-slate-100 text-left text-red-700 text-sm p-4 rounded-xl overflow-auto max-h-64 whitespace-pre-wrap border border-red-100">
+                    {errorMsg || "服务暂时不可用，请稍后重试。"}
+                  </div>
+                </div>
+
+                <div className="flex gap-4">
+                  <button
+                    onClick={() =>
+                      lastRequest &&
+                      handleSourcingRequest(lastRequest.query, lastRequest.images, 'quick')
+                    }
+                    className="px-8 py-3 bg-icare-900 text-white rounded-xl font-bold shadow-lg hover:bg-icare-800 transition-all active:scale-95"
+                  >
+                    重试
+                  </button>
+
+                  <button
+                    onClick={() => {
+                      setAppState(AppState.IDLE);
+                      setResult(null);
+                      setErrorMsg(null);
+                    }}
+                    className="px-8 py-3 bg-slate-100 text-slate-600 rounded-xl font-bold hover:bg-slate-200 transition-all active:scale-95"
+                  >
+                    更换关键词
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {appState === AppState.ABORTED && (
+              <div className="w-full max-w-lg bg-slate-100 p-6 rounded-2xl text-center border border-slate-200">
+                <p className="text-slate-600 font-bold">搜索已停止。</p>
+                <button
+                  onClick={() => setAppState(AppState.IDLE)}
+                  className="mt-2 text-icare-accent text-sm font-bold hover:underline"
+                >
+                  重新开始
+                </button>
+              </div>
+            )}
+
+            {appState === AppState.SUCCESS && result?.hunterResult && (
+              <HunterResults
+                initialResult={result.hunterResult}
+                sources={result.sources}
+                onKeywordClick={handleKeywordSearch}
+                originalRequest={lastRequest || undefined}
+              />
+            )}
+          </div>
+        )}
+
+        {activeTab === Tab.RFQ && (
+          <RFQGenerator sessionImages={sessionImages} />
+        )}
+
+        {activeTab === Tab.QUOTE && (
+          <QuotationGenerator />
+        )}
+      </main>
+
+      <Footer />
     </div>
   );
-};
+}
